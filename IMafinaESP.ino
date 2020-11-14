@@ -1,42 +1,14 @@
 #define CAMERA_MODEL_AI_THINKER
+
+#include "esp_camera.h"
+#include "camera_pins.h"
+#include "badge.h"
+#include <Arduino.h>
+#include <UniversalTelegramBot.h>
+#include <ArduinoJson.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
-#include "esp_camera.h"
-#include "UniversalTelegramBot.h"
-#include "badge.h"
 
-
-#define BOTtoken "628590242:AAEVn6EKF3LAYGVoq9Kcxmzuxx75CzGHv-0"
-String token = BOTtoken;
-
-WiFiClientSecure client;
-UniversalTelegramBot bot(BOTtoken, client);
-
-int Bot_mtbs = 3000; //mean time between scan messages
-long Bot_lasttime;   //last time messages' scan has been done
-
-camera_fb_t * fb;
-uint8_t* fb_buffer;
-size_t fb_length;
-int currentByte;
-
-#define PWDN_GPIO_NUM     32
-#define RESET_GPIO_NUM    -1
-#define XCLK_GPIO_NUM      0
-#define SIOD_GPIO_NUM     26
-#define SIOC_GPIO_NUM     27
-
-#define Y9_GPIO_NUM       35
-#define Y8_GPIO_NUM       34
-#define Y7_GPIO_NUM       39
-#define Y6_GPIO_NUM       36
-#define Y5_GPIO_NUM       21
-#define Y4_GPIO_NUM       19
-#define Y3_GPIO_NUM       18
-#define Y2_GPIO_NUM        5
-#define VSYNC_GPIO_NUM    25
-#define HREF_GPIO_NUM     23
-#define PCLK_GPIO_NUM     22
 #define WIDTH 320
 #define HEIGHT 240
 #define BLOCK_SIZE 10
@@ -44,90 +16,86 @@ int currentByte;
 #define H (HEIGHT / BLOCK_SIZE)
 #define BLOCK_DIFF_THRESHOLD 0.2
 #define IMAGE_DIFF_THRESHOLD 0.1
+#define DEBUG 1
 
 uint16_t prev_frame[H][W] = { 0 };
 uint16_t current_frame[H][W] = { 0 };
+uint16_t count = 0;
+bool setup_camera(framesize_t);
 bool capture_still();
 bool motion_detect();
-void update_frame();
+void update_frame();  
+void setupCamera(bool statusformat);
 void print_frame(uint16_t frame[H][W]);
+void wifi();
 
-void setup()
-{
-  Serial.begin(115200);
+WiFiClientSecure client;
+UniversalTelegramBot bot(BOTtoken, client);
 
-  camera_config_t config;
-  config.ledc_channel = LEDC_CHANNEL_0;
-  config.ledc_timer = LEDC_TIMER_0;
-  config.pin_d0 = Y2_GPIO_NUM;
-  config.pin_d1 = Y3_GPIO_NUM;
-  config.pin_d2 = Y4_GPIO_NUM;
-  config.pin_d3 = Y5_GPIO_NUM;
-  config.pin_d4 = Y6_GPIO_NUM;
-  config.pin_d5 = Y7_GPIO_NUM;
-  config.pin_d6 = Y8_GPIO_NUM;
-  config.pin_d7 = Y9_GPIO_NUM;
-  config.pin_xclk = XCLK_GPIO_NUM;
-  config.pin_pclk = PCLK_GPIO_NUM;
-  config.pin_vsync = VSYNC_GPIO_NUM;
-  config.pin_href = HREF_GPIO_NUM;
-  config.pin_sscb_sda = SIOD_GPIO_NUM;
-  config.pin_sscb_scl = SIOC_GPIO_NUM;
-  config.pin_pwdn = PWDN_GPIO_NUM;
-  config.pin_reset = RESET_GPIO_NUM;
-  config.xclk_freq_hz = 20000000;
-  config.pixel_format = PIXFORMAT_JPEG;
-  //init with high specs to pre-allocate larger buffers
-  if (psramFound()) {
-    config.frame_size = FRAMESIZE_QVGA;
-    config.jpeg_quality = 10;
-    config.fb_count = 1;  // Trying to reduce memory use
-  } else {
-    config.frame_size = FRAMESIZE_QVGA;
-    config.jpeg_quality = 12;
-    config.fb_count = 1;
+int Bot_mtbs = 3000; //mean time between scan messages
+long Bot_lasttime; 
+
+camera_fb_t * fb;
+uint8_t* fb_buffer;
+size_t fb_length;
+int currentByte;
+
+void setup() {
+    Serial.begin(115200);
+    setupCamera(SetCam);
+}
+   
+void loop() {
+  Serial.println(String(SetCam));
+  if(SetCam){
+    if (!capture_still()) {
+        Serial.println("Failed capture");
+        delay(3000);
+        return;
+    }
+    if (motion_detect()) {
+      if (count>=5){
+          Serial.println("Motion detected");
+          SetCam = false;
+          ESP.restart();
+        }
+      else{
+          count++;
+        }
+    }
+    update_frame();
+    Serial.println("=================");
+  }
+  else{      
+      wifi();
+      take_send_photo();
+      SetCam = true;
+      Serial.println("jopa----");
+      ESP.restart();
+    }
+}
+bool isMoreDataAvailable() {return (fb_length - currentByte);}
+
+uint8_t photoNextByte() {currentByte++;return (fb_buffer[currentByte - 1]);}
+
+void wifi(){
+    Serial.print("Connecting Wifi: ");
+    Serial.println(ssid);
+    // Set WiFi to station mode and disconnect from an AP if it was Previously
+    // connected
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) {
+      Serial.print(".");
+      delay(500);
+    }
+    Serial.println("");
+    Serial.println("WiFi connected");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
   }
 
-  // camera init
-  esp_err_t err = esp_camera_init(&config);
-  if (err != ESP_OK) {
-    Serial.printf("Camera init failed with error 0x%x", err);
-    return;
-  }
-
-  sensor_t * s = esp_camera_sensor_get();
-
-  s->set_framesize(s, FRAMESIZE_XGA);
-
-  // Attempt to connect to Wifi network:
-  Serial.print("Connecting Wifi: ");
-  Serial.println(ssid);
-
-  // Set WiFi to station mode and disconnect from an AP if it was Previously
-  // connected
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    delay(500);
-  }
-
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-}
-
-bool isMoreDataAvailable() {
-  return (fb_length - currentByte);
-}
-
-uint8_t photoNextByte() {
-  currentByte++;
-  return (fb_buffer[currentByte - 1]);
-}
-
+  
 void take_send_photo()
 {
   camera_fb_t * fb = NULL;
@@ -140,6 +108,41 @@ void take_send_photo()
   fb_length = NULL;
   fb_buffer = NULL;
 }
+
+void setupCamera(bool statusformat){
+    camera_config_t config;
+    config.ledc_channel = LEDC_CHANNEL_0;
+    config.ledc_timer = LEDC_TIMER_0;
+    config.pin_d0 = Y2_GPIO_NUM;
+    config.pin_d1 = Y3_GPIO_NUM;
+    config.pin_d2 = Y4_GPIO_NUM;
+    config.pin_d3 = Y5_GPIO_NUM;
+    config.pin_d4 = Y6_GPIO_NUM;
+    config.pin_d5 = Y7_GPIO_NUM;
+    config.pin_d6 = Y8_GPIO_NUM;
+    config.pin_d7 = Y9_GPIO_NUM;
+    config.pin_xclk = XCLK_GPIO_NUM;
+    config.pin_pclk = PCLK_GPIO_NUM;
+    config.pin_vsync = VSYNC_GPIO_NUM;
+    config.pin_href = HREF_GPIO_NUM;
+    config.pin_sscb_sda = SIOD_GPIO_NUM;
+    config.pin_sscb_scl = SIOC_GPIO_NUM;
+    config.pin_pwdn = PWDN_GPIO_NUM;
+    config.pin_reset = RESET_GPIO_NUM;
+    config.xclk_freq_hz = 20000000;
+    if(statusformat)
+      config.pixel_format = PIXFORMAT_GRAYSCALE; 
+    else
+      config.pixel_format = PIXFORMAT_JPEG;
+    config.frame_size = FRAMESIZE_QVGA;
+    config.jpeg_quality = 12;
+    config.fb_count = 1;
+    esp_camera_init(&config);
+
+    sensor_t *sensor = esp_camera_sensor_get();
+    sensor->set_framesize(sensor, FRAMESIZE_QVGA);
+}
+
 bool capture_still() {
     camera_fb_t *frame_buffer = esp_camera_fb_get();
 
@@ -210,6 +213,10 @@ bool motion_detect() {
     return (1.0 * changes / blocks) > IMAGE_DIFF_THRESHOLD;
 }
 
+
+/**
+ * Copy current frame to previous
+ */
 void update_frame() {
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
@@ -218,6 +225,10 @@ void update_frame() {
     }
 }
 
+/**
+ * For serial debugging
+ * @param frame
+ */
 void print_frame(uint16_t frame[H][W]) {
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
@@ -227,15 +238,4 @@ void print_frame(uint16_t frame[H][W]) {
 
         Serial.println();
     }
-}
-
-void loop() {
-   if (!capture_still()) {
-      Serial.println("Failed capture");
-      delay(3000);
-      return;
-  }
-  if (motion_detect()) {
-    take_send_photo();
-  }
 }
