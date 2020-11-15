@@ -8,7 +8,7 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
-
+#define EEPROM_SIZE 1
 #define WIDTH 320
 #define HEIGHT 240
 #define BLOCK_SIZE 10
@@ -32,9 +32,6 @@ void wifi();
 WiFiClientSecure client;
 UniversalTelegramBot bot(BOTtoken, client);
 
-int Bot_mtbs = 3000; //mean time between scan messages
-long Bot_lasttime; 
-
 camera_fb_t * fb;
 uint8_t* fb_buffer;
 size_t fb_length;
@@ -42,6 +39,11 @@ int currentByte;
 
 void setup() {
     Serial.begin(115200);
+    EEPROM.begin(EEPROM_SIZE);
+    EEPROM.get(0, SetCam);
+    Serial.println(String(SetCam));
+    Serial.println(String(EEPROM.get(0, SetCam)));
+    Serial.println(String(EEPROM.read(0)));
     setupCamera(SetCam);
 }
    
@@ -54,14 +56,16 @@ void loop() {
         return;
     }
     if (motion_detect()) {
-      if (count>=5){
+      if (count>=3){
           Serial.println("Motion detected");
           SetCam = false;
+          EEPROM.write(0, false);
+          EEPROM.commit();
           ESP.restart();
         }
-      else{
+      else
           count++;
-        }
+        
     }
     update_frame();
     Serial.println("=================");
@@ -70,7 +74,9 @@ void loop() {
       wifi();
       take_send_photo();
       SetCam = true;
-      Serial.println("jopa----");
+      EEPROM.write(0, true);
+      EEPROM.commit();
+      Serial.println(String(SetCam));   
       ESP.restart();
     }
 }
