@@ -60,13 +60,11 @@ bool capture_still() {
 bool motion_detect() {
     uint16_t changes = 0;
     const uint16_t blocks = (WIDTH * HEIGHT) / (BLOCK_SIZE * BLOCK_SIZE);
-
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
             float current = current_frame[y][x];
             float prev = prev_frame[y][x];
             float delta = abs(current - prev) / prev;
-
             if (delta >= BLOCK_DIFF_THRESHOLD) {
 #if DEBUG
                 Serial.print("diff\t");
@@ -89,11 +87,9 @@ bool motion_detect() {
 }
 
 void update_frame() {
-    for (int y = 0; y < H; y++) {
-        for (int x = 0; x < W; x++) {
+    for (int y = 0; y < H; y++) 
+        for (int x = 0; x < W; x++) 
             prev_frame[y][x] = current_frame[y][x];
-        }
-    }
 }
 
 void print_frame(uint16_t frame[H][W]) {
