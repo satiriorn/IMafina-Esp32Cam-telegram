@@ -2,10 +2,10 @@
 #define EEPROM_SIZE 1
 
 #include "esp_camera.h"
-#include "camera_pins.h"
-#include "badge.h"
-#include "detect.h"
-#include "telegramBot.h"
+#include "camera_pins.hpp"
+#include "badge.hpp"
+#include "detect.hpp"
+#include "telegramBot.hpp"
 #include <EEPROM.h>
 #include <Arduino.h>
 
@@ -44,8 +44,12 @@ void loop() {
   }
   else{      
       wifi();
-      take_send_photo();
       SetCam = true;
+      for(int i = 0; i<4;i++){
+         take_send_photo();
+         i++;
+         delay(15000);
+        }
       EEPROM.write(0, true);
       EEPROM.commit();
       ESP.restart();
@@ -86,5 +90,5 @@ void setupCamera(bool statusformat){
     esp_camera_init(&config);
 
     sensor_t *sensor = esp_camera_sensor_get();
-    sensor->set_framesize(sensor, FRAMESIZE_QVGA);
+    sensor->set_framesize(sensor, config.frame_size);
 }
