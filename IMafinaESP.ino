@@ -83,8 +83,8 @@ void setupCamera(bool statusformat){
       config.frame_size = FRAMESIZE_QVGA;
     }
     else{
-      config.pixel_format = PIXFORMAT_JPEG;
-      config.frame_size = FRAMESIZE_VGA;
+      config.pixel_format = PIXFORMAT_GRAYSCALE;
+      config.frame_size = FRAMESIZE_QVGA;
     }
     config.jpeg_quality = 12;
     config.fb_count = 1;
